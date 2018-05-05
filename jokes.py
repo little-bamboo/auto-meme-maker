@@ -16,25 +16,33 @@ class JokeCollector(object):
 
     def __init__(self):
 
-        reddit_auth = json.loads(open('../config/reddit_auth.json', 'r').read())
+        reddit_auth = json.loads(open('./config/reddit_auth.json', 'r').read())
+
+        self.image_path = '../meme-gen/uploads/auto-memes'
 
         self.meme_maker = meme_maker.MemeGenerator()
 
         self.collecting = False
-        self.comprehend = boto3.client(service_name='comprehend', region_name='us-west-2')
+
         self.images = imagesearchapi.ImageSearchApi()
         self.reddit = praw.Reddit(client_id=reddit_auth['client_id'],
                                   client_secret=reddit_auth['client_secret'], password=reddit_auth['password'],
                                   user_agent=reddit_auth['user_agent'], username=reddit_auth['username'])
 
     def comprehend_joke(self, title):
-        key_phrases = self.comprehend.detect_key_phrases(Text=title, LanguageCode='en')
+        comprehend = boto3.client(service_name='comprehend', region_name='us-west-2')
+        key_phrases = comprehend.detect_key_phrases(Text=title, LanguageCode='en')
 
         phrase_list = []
         for phrase in key_phrases['KeyPhrases']:
             phrase_list.append(phrase['Text'].encode('utf-8'))
 
-        return ' '.join(phrase_list)
+        if phrase_list:
+            phrases = b' '.join(phrase_list)
+        else:
+            phrases = ''
+
+        return phrases
 
     def collect(self):
 
@@ -53,18 +61,19 @@ class JokeCollector(object):
 
                 phrases = self.comprehend_joke(submission.title)
 
+                if not phrases:
+                    # If phrases is empty, contiue to the next joke
+                    continue
+
                 returned_image = self.images.search(phrases)
 
-                if returned_image:
-                    joke_image = returned_image
-                else:
-                    # Skip over current loop if there is no image returned
+                if not returned_image:
+                    # If no images are returned, continue to the next joke
                     continue
 
                 joke_object['title'] = submission.title
                 joke_object['punchline'] = submission.selftext
-                joke_object['key_phrases'] = phrases
-                joke_object['image'] = joke_image
+                joke_object['key_phrases'] = str(phrases)
                 joke_object['created'] = submission.created
                 joke_object['author'] = submission.author.name
                 joke_object['over_18'] = submission.over_18
@@ -76,10 +85,11 @@ class JokeCollector(object):
                 try:
 
                     joke_object['meme'] = self.meme_maker.make_meme(
-                        joke_object['title'], joke_object['punchline'], joke_object['image'])
+                        joke_object['title'], joke_object['punchline'], returned_image, self.image_path)
+
                     print(json.dumps(joke_object, indent=1))
                     print('---------------')
-                    db.reddit_jokes.update({'id': submission.id}, joke_object, upsert=True)
+                    db.reddit_meme_jokes.update({'id': submission.id}, joke_object, upsert=True)
 
                 except pymongo.errors.DuplicateKeyError as e:
                     print("Duplicate Key Error: {0}".format(e))
@@ -88,7 +98,7 @@ class JokeCollector(object):
 
                 time.sleep(2)
 
-        return db.reddit_jokes.count()
+        return db.reddit_meme_jokes.count()
 
 
 if __name__ == '__main__':

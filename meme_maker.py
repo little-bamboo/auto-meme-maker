@@ -9,6 +9,9 @@ import textwrap
 import base64
 
 import re
+from unicodedata import normalize
+
+_punctuation_re = re.compile(r'[\t !"#$%&\'()*\-/<=>?@\[\\\]^_`{|},.]+')
 
 
 class MemeGenerator(object):
@@ -16,12 +19,23 @@ class MemeGenerator(object):
     def __init__(self):
         self.meme_creating = False
 
-    def slugify(self, text):
-        text = text.encode('utf-8').lower().rstrip('?')
-        # print text
-        return re.sub(r'\W+', '-', text)
+    def slugify(self, text, delim='-'):
+        """
+            Generate an ASCII-only slug.
+        """
 
-    def make_meme(self, top_string, bottom_string, img):
+        result = []
+        for word in _punctuation_re.split(text.lower()):
+            word = normalize('NFKD', word) \
+                .encode('ascii', 'ignore') \
+                .decode('utf-8')
+
+            if word:
+                result.append(word)
+
+        return delim.join(result)
+
+    def make_meme(self, top_string, bottom_string, img, img_path):
         # print('making meme')
         # image_file_object = requests.get(file_object['image'])
         # img = Image.open(io.BytesIO(image_file_object.content))
@@ -75,9 +89,9 @@ class MemeGenerator(object):
             # print('drawing line from bottom lines')
             draw.text(bottom_text_position, line, (255, 255, 255), font=font)
         file_name = self.slugify(top_lines[0])
-        file_name = file_name + '.' + img.format.lower()
+        file_name = str(file_name) + '.' + img.format.lower()
 
-        path = '../uploads/auto-memes/' + file_name
+        path = img_path + '/' + file_name
         img.save(path, img.format)
 
         return_path = path[2:]

@@ -1,9 +1,12 @@
 import requests
 import io
-from PIL import Image
 import re
 import json
 from operator import itemgetter
+
+import numpy as np
+import cv2
+from PIL import Image
 import pytesseract
 
 
@@ -15,17 +18,26 @@ class ImageSearchApi(object):
     def filter_images_with_text(self, image_list):
         print("processing list of images")
 
-        filtered_images = []
-
         for image in image_list:
-            response = requests.get(image['image'])
-            img = Image.open(io.BytesIO(response.content))
+            
+            try:
 
-            text_found = pytesseract.image_to_string(img)
-            if text_found == '':
-                filtered_images.append(img)
+                response = requests.get(image['image'])
+                img = Image.open(io.BytesIO(response.content))
 
-        return filtered_images
+                open_cv_image = cv2.cvtColor(np.array(img.convert('RGB')), cv2.COLOR_RGB2GRAY)
+                text_found = pytesseract.image_to_string(open_cv_image).strip()
+
+                # print("Text Found: {0} \nIn Image: {1}".format(text_found, image['image']))
+
+                if text_found == '':
+                    # Return the first image without any text found
+                    return img
+
+            except Exception as e:
+                print("Error Reading Image Text: {0}".format(e))
+
+        return
 
     def search(self, keywords, max_results=None):
         url = 'https://duckduckgo.com/'
